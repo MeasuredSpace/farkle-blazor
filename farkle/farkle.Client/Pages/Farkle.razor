@@ -1,0 +1,687 @@
+﻿@page "/farkle"
+@rendermode InteractiveAuto
+@using System.Collections
+@using System.Text.Json
+<PageTitle>Farkle</PageTitle>
+<style>
+    .reset-style, .reset-style * {
+        all: revert;
+    }
+    .row {
+        max-width: 360px;
+        display: flex;
+        flex-direction: row;
+        justify-content: left;
+        align-items: center;
+        /* outline: 1px solid red; */
+    }
+    .dicerow > div {
+        text-align: center;
+        font-size: 4em; /* Updated font size to make it bigger */
+        line-height: 1em;
+    }
+    .meldrow > div {
+        text-align: center;
+        font-size: 3em; /* Updated font size to make it bigger */
+        line-height: 1em;
+        /* outline: 1px dashed red; */
+    }
+    .die {
+        color: black;
+    }
+    .diescorable {
+        color: black;
+    }
+    .dienoscore {
+        color: grey;
+    }
+    .diehot {
+        color: gold;
+    }
+    .diepicked {
+        color: red;
+    }
+    .diemelded {
+        color: darkblue;
+    }
+    .diehidden {
+        visibility: hidden;
+        width: 0;
+        height: 0;
+        border: none;
+        text-align: center;
+        line-height: 0;
+        margin: 0;
+    }
+    .column {
+        /*width: 200px;
+                padding: 1px;*/
+        float: left;
+        clear: left;
+    }
+    .control-area {
+        clear: left;
+    }
+</style>
+<h1>Farkle Game</h1>
+<p>
+    <label class="lbl">Number of Players <input class="player-number" @bind-value=@playerNumber /></label>
+</p>
+<div class="reset-style">
+    <div class="row" id="rolledDice" style="min-height: 50px; min-width: 180px">
+        <div>Dice:</div>
+        <div class="row dicerow">
+            @for (var i = 0; i < rollingDice.Count; i++)
+            {
+                var die = rollingDice[i];
+                var dieIndex = i;
+                <div
+                    id="@die.Id"
+                    class="@die.Class"
+                    @onclick="() => PickDie(dieIndex, true)">
+                    @GetDiceFaceUnicode(die.Value)
+                </div>
+            }
+        </div>
+    </div>
+    <div class="row" id="pickedDice" style="min-height: 50px; min-width: 180px">
+        <div>Picks:</div>
+        <div class="row dicerow">
+            @foreach (var die in pickingDice)
+            {
+                <div id="@die.Id" class="@die.Class">@GetDiceFaceUnicode(die.Value)</div>
+            }
+        </div>
+    </div>
+    <div id="meldDice">
+        <div>Melds:</div>
+        @{
+            var reversedMelds = meldDice;
+            reversedMelds.Reverse();
+        }
+        @foreach (var dieMeld in reversedMelds)
+        {
+            <div class="row meldrow">
+                @foreach (var dieValue in dieMeld)
+                {
+                    <div class="@dieClasses.diemelded">@GetDiceFaceUnicode(dieValue)</div>
+                }
+            </div>
+        }
+    </div>
+</div>
+<p>
+    <button class="btn btn-primary" @onclick="NewGame" disabled=@newGameDisabled>New Game</button>
+    <button class="btn btn-primary" @onclick="TryLuck" disabled=@rollDiceDisabled>Roll Dice</button>
+    <button class="btn btn-primary" @onclick="BankPoints" disabled=@bankPointsDisabled>BankPoints</button>
+</p>
+<ul>
+    @foreach (var gameFact in GameFacts)
+    {
+        <li>@gameFact.GetType().Name @JsonSerializer.Serialize(gameFact)</li>
+    }
+</ul>
+
+@code {
+    private int currentCount = 0;
+    private int? playerNumber = 2;
+    private bool die1Enabled = true;
+    private bool newGameDisabled = false;
+    private bool rollDiceDisabled = true;
+    private bool bankPointsDisabled = true;
+    public List<object> GameFacts { get; } = new List<object>();
+    private List<Die> rollingDice = [];
+    private List<Die> pickingDice = [];
+    private List<int[]> meldDice = [];
+
+    private enum dieClasses
+    {
+        die,
+        diescorable,
+        dienoscore,
+        diehidden,
+        diehot,
+        diepicked,
+        diemelded,
+    }
+    private enum dieIds
+    {
+        die1,
+        die2,
+        die3,
+        die4,
+        die5,
+        die6,
+    }
+
+    #region Subscription Notifiers
+
+    private void NotifyOfNewFact()
+    {
+        UpdateRollDiceButton();
+        UpdateDice();
+        UpdatePickedDice();
+        UpdateDieClasses();
+        UpdateMelds();
+
+        KickoffFactProcessors();
+    }
+
+    private void KickoffFactProcessors()
+    {
+        RollGenerator();
+        //FarkleInspector();
+        //WinnerInspector();
+    }
+
+    #endregion
+
+    #region Read Model Subscribers
+
+    private void UpdateRollDiceButton()
+    {
+        object lastGameFact = GetLastFact();
+
+        //enable roll dice if the last fact was game started, turn ended or hot dice
+        if (lastGameFact.GetType().Name == nameof(GameStartedFact))
+        {
+            rollDiceDisabled = false;
+        }
+    }
+
+    private void UpdateDice()
+    {
+        var lastFact = GetLastFact();
+
+        // Setup dice for a new game
+        if (lastFact is GameStartedFact gameStartedFact)
+        {
+            rollingDice = 
+            [
+                new Die(1, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(2, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(3, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(4, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(5, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(6, dieIds.die1, dieClasses.dienoscore)
+            ];
+        }
+
+        // Assign roll generated dice values
+        if (lastFact is RollGeneratedFact rollGeneratedFact)
+        {
+            rollingDice.Clear();
+            rollingDice =
+            [
+                new Die(0, dieIds.die1, dieClasses.diehidden)
+                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+            ];
+
+            for (var i = 0; i < rollGeneratedFact.DiceValues.Length; i++)
+            {
+                rollingDice[i].Value = rollGeneratedFact.DiceValues[i];
+            }
+        }
+
+        // Reset dice for hot dice
+        if (lastFact is LuckTriedFact { TurnEnded: false } luckTriedFact)
+        {
+            //Todo
+        }
+
+        // Reset dice for a new turn
+        if (lastFact is LuckTriedFact { TurnEnded: true } luckTriedFactTurnEnded)
+        {
+            // rollingDice.Clear();
+
+            // for (var i = 0; i < rollGeneratedFact.DiceValues.Length; i++)
+            // {
+            //     rollingDice.Add((rollGeneratedFact.DiceValues[i], (dieIds)i, dieClasses.die));
+            // }
+        }
+    }
+
+    private void UpdatePickedDice() {
+        var lastFact = GetLastFact();
+
+        //setup picked dice for new game -or- re-hide and clear picked die for each roll
+        if (lastFact is GameStartedFact or LuckTriedFact) {
+            //document.getElementById("pickedArea").style.display = "block";
+
+            pickingDice =
+            [
+                new Die(0, dieIds.die1, dieClasses.diehidden)
+                , new Die(0, dieIds.die2, dieClasses.diehidden)
+                , new Die(0, dieIds.die3, dieClasses.diehidden)
+                , new Die(0, dieIds.die4, dieClasses.diehidden)
+                , new Die(0, dieIds.die5, dieClasses.diehidden)
+                , new Die(0, dieIds.die6, dieClasses.diehidden)
+            ];
+        }
+
+        //die picked and un-picked actions
+        if (lastFact is DiePickedFact diePicked)
+        {
+            var dieIndex = diePicked.DieIndex;
+            var dieValue = 
+                diePicked.FromRoll 
+                    ? rollingDice[dieIndex].Value 
+                    : pickingDice[dieIndex].Value;
+
+            rollingDice[dieIndex].Value =
+                diePicked.FromRoll ? 0 : dieValue;
+
+            pickingDice[dieIndex].Value =
+                diePicked.FromRoll ? dieValue: 0;
+        }
+    } 
+
+    private void UpdateBankPointsButton()
+    {
+        throw new NotImplementedException();
+    }
+
+    public void UpdateMelds()
+    {
+        var lastFact = GetLastFact();
+
+        // Setup meld area for new game
+        if (lastFact is GameStartedFact)
+        {
+            
+        }
+
+        // Load melds on a new roll
+        if (lastFact is LuckTriedFact { TurnEnded: false })
+        {
+            // // Create meld divs from luck tried facts in turn
+            var allFacts = GetAllFacts();
+            var luckTriedFactsSinceLastTurn = GetLuckTriedFactsSinceLastTurn(allFacts);
+            //var hotDiceIndexes = GetHotDiceIndexesForLuckTriedFactsInTurn(allFacts);
+
+            // int startMeldIndex = 0;
+            // if (hotDiceIndexes.Count > 0)
+            // {
+            //     startMeldIndex = hotDiceIndexes[^1] + 1;
+            // }
+
+            // HtmlElement meldDiceDiv = (HtmlElement)WebBrowser.Document.GetElementById("meldDice");
+            // meldDiceDiv.InnerHtml = "";
+
+            meldDice.Clear();
+
+            var luckTriedFactsWithNonZeroMelds = 
+                luckTriedFactsSinceLastTurn.Where(fact => fact.MeldKept.Length > 0);
+
+            foreach (var fact in luckTriedFactsWithNonZeroMelds)
+            {
+                meldDice.Add(fact.MeldKept);
+            }
+        }
+
+        // Reset meld when a turn ends
+        if (lastFact is LuckTriedFact { TurnEnded: true })
+        {
+            meldDice.Clear();
+        }
+    }
+
+    private void UpdateDieClasses()
+    {
+        var lastFact = GetLastFact();
+
+        //setup picked dice for new game
+        if (lastFact is RollGeneratedFact or DiePickedFact)
+        {
+            var rollingDiceValues = rollingDice
+                .Select(d => d.Value)
+                .ToList();
+
+            Dice rollingDiceScore = CalculateScore(rollingDiceValues);
+
+            foreach (Die die in rollingDice)
+            {
+                die.Class = 
+                    rollingDiceScore.ScorableDice.Contains(die.Value) ? dieClasses.diescorable : dieClasses.dienoscore;
+            
+                if (die.Value == 0)
+                    die.Class = dieClasses.diehidden;
+            }
+
+            var pickingDiceValues = pickingDice
+                .Select(d => d.Value)
+                .ToList();
+
+            Dice pickingDiceScore = CalculateScore(pickingDiceValues);
+
+            foreach (Die die in pickingDice)
+            {
+                die.Class = pickingDiceScore.ScorableDice.Contains(die.Value) ? dieClasses.diescorable : dieClasses.diepicked;
+
+                if (die.Value == 0)
+                    die.Class = dieClasses.diehidden;
+            }
+        }
+    }
+
+    #endregion
+
+    #region Read Model Methods
+
+    private object GetLastFact()
+    {
+        return GameFacts[^1];
+    }
+
+    private List<object> GetAllFacts()
+    {
+        return GameFacts;
+    }
+    
+    private List<LuckTriedFact> GetLuckTriedFactsSinceLastTurn(List<object> facts)
+    {
+        int turnStartIndex = Math.Max(
+            facts.FindLastIndex(fact => fact is GameStartedFact),
+            facts.FindLastIndex(fact => fact is LuckTriedFact { TurnEnded: true })
+        ) + 1;
+
+        List<LuckTriedFact> luckTriedFactsThisTurn = 
+            facts
+                .GetRange(turnStartIndex, facts.Count - turnStartIndex)
+                .OfType<LuckTriedFact>()
+                .ToList();
+        
+        return luckTriedFactsThisTurn;
+    }
+
+    private List<int> GetHotDiceIndexesForLuckTriedFactsInTurn(List<object> facts)
+    {
+        List<LuckTriedFact> luckTriedFactsThisTurn = GetLuckTriedFactsSinceLastTurn(facts);
+        List<int> hotDiceIndexes = new List<int>();
+        for (int index = 0; index < luckTriedFactsThisTurn.Count; index++)
+        {
+            LuckTriedFact fact = luckTriedFactsThisTurn[index];
+            if (fact.DiceRolled.Length == fact.MeldKept.Length)
+            {
+                hotDiceIndexes.Add(index);
+            }
+        }
+        return hotDiceIndexes;
+    }
+
+    #endregion
+
+    #region Processor Subscribers
+
+    private void RollGenerator()
+    {
+        if (GetLastFact() is LuckTriedFact { TurnEnded: false } luckTriedFact)
+        {
+            var numberToGenerate = luckTriedFact.DiceRolled.Length == 0 ? 6 : luckTriedFact.DiceRolled.Length;
+            
+            var numbersGenerated = 
+                GenerateRoll(numberToGenerate);
+            
+            StoreFact(new RollGeneratedFact(numbersGenerated));
+        }
+    }
+
+    private void FarkleInspector()
+    {
+        throw new NotImplementedException();
+    }
+
+    private void WinnerInspector()
+    {
+        throw new NotImplementedException();
+    }
+
+    #endregion
+
+    #region Commands
+
+    private void NewGame()
+    {
+        GameFacts.Clear();
+        StoreFact(new GameStartedFact(playerNumber));
+    }
+
+    private void TryLuck()
+    {
+        var rolledDice = rollingDice
+            .Where(d => d.Class != dieClasses.diehidden && d.Class != dieClasses.diehot)
+            .Select(d => d.Value)
+            .ToArray();
+
+        var pickedDice = pickingDice
+            .Where(d => d.Class == dieClasses.diepicked)
+            .Select(d => d.Value)
+            .ToArray();
+
+        var hotDice = rollingDice
+            .Where(d => d.Class == dieClasses.diehot)
+            .Select(d => d.Value)
+            .ToArray();
+
+        var pickedScoringDice = pickingDice
+            .Where(d => d.Class == dieClasses.diescorable)
+            .Select(d => d.Value)
+            .ToArray();
+
+        var diceToRoll = rolledDice.Concat(pickedDice);
+        var keptDice = pickedScoringDice.Concat(hotDice).ToArray();
+        
+        StoreFact(
+            new LuckTriedFact(
+                rolledDice
+                , keptDice
+                , false));
+    }
+
+    private void PickDie(int index, bool fromRoll)
+    {
+        StoreFact(new DiePickedFact(index, fromRoll));
+    }
+    
+    private void BankPoints()
+    {
+        throw new NotImplementedException();
+    }
+
+    #endregion
+
+    #region Records
+
+    record GameStartedFact(int? NumberOfPlayers);
+    record LuckTriedFact(int[] DiceRolled, int[] MeldKept, bool TurnEnded);
+    record RollGeneratedFact(int[] DiceValues);
+    record DiePickedFact(int DieIndex, bool FromRoll);
+    record GameEndedFact(int Winner, int FinalScore);
+
+    record Die(int Value, dieIds Id, dieClasses Class)
+    {
+        public int Value { get; set; } = Value;
+        public dieIds Id { get; set; } = Id;
+        public dieClasses Class { get; set; } = Class;
+    }
+
+    record Dice(List<int> Roll)
+    {
+        public List<int> ScorableDice { get; set; } = [];
+        public List<int> UnscorableDice { get; set; } = [];
+        public int Score { get; set; } = 0;
+    }
+
+    #endregion
+
+    #region Publishers
+
+    private void StoreFact(object fact)
+    {
+        GameFacts.Add(fact);
+        NotifyOfNewFact();
+    }
+
+    #endregion
+
+    #region Services
+
+    private int[] GenerateRoll(int diceCount) {
+        List<int> rollResults = new List<int>();
+        Random random = new Random();
+        for (int i = 0; i < diceCount; i++) {
+            rollResults.Add(random.Next(1, 7));
+        }
+        return rollResults.ToArray();
+    }
+
+    private string GetDiceFaceUnicode(int diceValue)
+    {
+        return diceValue == 0 
+            ? char.ConvertFromUtf32(0x2686)
+            : char.ConvertFromUtf32(0x2680 + diceValue - 1);
+    }
+
+    private Dice CalculateScore(List<int> diceToScore)
+    {
+        Dice dice = new Dice(diceToScore);
+        if (dice.Roll.Count < 1 || dice.Roll.Count > 6)
+        {
+            dice.Score = 0;
+            return dice;
+        }
+
+        Dictionary<int, int> countsOfNumber = new Dictionary<int, int>();
+        foreach (int num in dice.Roll)
+        {
+            if (countsOfNumber.ContainsKey(num))
+            {
+                countsOfNumber[num]++;
+            }
+            else
+            {
+                countsOfNumber[num] = 1;
+            }
+        }
+
+        //Remove 0's
+        if (countsOfNumber.ContainsKey(0))
+            countsOfNumber.Remove(0);
+
+        // Function to remove counted dice
+        void RemoveCountedDice(int number, int howManyToRemove)
+        {
+            countsOfNumber[number] -= howManyToRemove;
+            if (countsOfNumber[number] <= 0)
+            {
+                countsOfNumber.Remove(number);
+            }
+            else
+            {
+                dice.UnscorableDice.AddRange(Enumerable.Repeat(number, howManyToRemove));
+            }
+        }
+
+        // Check for six of any number
+        foreach (var number in countsOfNumber.Keys.ToList())
+        {
+            if (countsOfNumber[number] == 6)
+            {
+                RemoveCountedDice(number, 6);
+                dice.Score += 3000;
+                dice.ScorableDice.AddRange(Enumerable.Repeat(number, 6));
+                break; // Ensure no further checks if this condition is met
+            }
+        }
+
+        // Check for five of any number
+        foreach (var number in countsOfNumber.Keys.ToList())
+        {
+            if (countsOfNumber[number] == 5)
+            {
+                RemoveCountedDice(number, 5);
+                dice.Score += 2000;
+                dice.ScorableDice.AddRange(Enumerable.Repeat(number, 5));
+                break; // Ensure no further checks if this condition is met
+            }
+        }
+
+        // Check for four of any number
+        foreach (var number in countsOfNumber.Keys.ToList())
+        {
+            if (countsOfNumber[number] == 4)
+            {
+                RemoveCountedDice(number, 4);
+                dice.Score += 1000;
+                dice.ScorableDice.AddRange(Enumerable.Repeat(number, 4));
+                break; // Ensure no further checks if this condition is met
+            }
+        }
+
+        // Check for three pairs
+        if (countsOfNumber.Values.Count(count => count == 2) == 3)
+        {
+            foreach (var number in countsOfNumber.Keys.ToList())
+            {
+                RemoveCountedDice(number, 2);
+                dice.ScorableDice.AddRange(Enumerable.Repeat(number, 2));
+            }
+
+            dice.Score += 1500;
+        }
+        else if (countsOfNumber.Keys.Count == 6)
+        {
+            // Ensure this check only runs if the previous condition wasn't met
+            // Check for one of every number from 1 to 6
+            foreach (var number in countsOfNumber.Keys.ToList())
+            {
+                RemoveCountedDice(number, 1);
+                dice.ScorableDice.Add(number);
+            }
+
+            dice.Score += 2500;
+        }
+
+        // Calculate score for three of any number
+        foreach (var number in countsOfNumber.Keys.ToList())
+        {
+            if (countsOfNumber[number] == 3)
+            {
+                dice.Score += number == 1 ? 1000 : number * 100;
+                RemoveCountedDice(number, 3);
+                dice.ScorableDice.AddRange(Enumerable.Repeat(number, 3));
+            }
+        }
+
+        // Calculate score for extra 1s
+        if (countsOfNumber.ContainsKey(1))
+        {
+            int countOfNumberOne = countsOfNumber[1];
+            dice.Score += countOfNumberOne * 100;
+            RemoveCountedDice(1, countOfNumberOne);
+            dice.ScorableDice.AddRange(Enumerable.Repeat(1, countOfNumberOne));
+        }
+
+        // Calculate score for extra 5s
+        if (countsOfNumber.ContainsKey(5))
+        {
+            int countOfNumberFive = countsOfNumber[5];
+            dice.Score += countOfNumberFive * 50;
+            RemoveCountedDice(5, countOfNumberFive);
+            dice.ScorableDice.AddRange(Enumerable.Repeat(5, countOfNumberFive));
+        }
+
+        if (countsOfNumber.Count > 0)
+        {
+            dice.UnscorableDice.AddRange(countsOfNumber.Keys.Select(num => num));
+        }
+
+        return dice;
+    }
+
+    #endregion
+}
