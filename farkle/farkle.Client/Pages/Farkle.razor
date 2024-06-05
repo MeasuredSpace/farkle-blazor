@@ -22,8 +22,8 @@
     }
     .meldrow > div {
         text-align: center;
-        font-size: 3em; /* Updated font size to make it bigger */
-        line-height: 1em;
+        font-size: 2.5em; /* Updated font size to make it bigger */
+        line-height: .72em;
         /* outline: 1px dashed red; */
     }
     .die {
@@ -62,78 +62,130 @@
     .control-area {
         clear: left;
     }
+    .autogrid {
+        --min-column-size: 12rem;
+        display: grid;
+        gap: .5rem;
+        grid-template-columns: 400px 200px; 
+    }
+    .farkle {
+        color: red;
+        width: 300px;
+        height: 300px;
+        position: absolute;
+        top: 100px;
+        left: 420px;
+        font-size: 3.5em;
+        transform: rotateY(0deg) rotate(-25deg);
+    }
 </style>
-<h1>Farkle Game</h1>
-<p>
-    <label class="lbl">Number of Players <input class="player-number" @bind-value=@playerNumber /></label>
-</p>
-<div class="reset-style">
-    <div class="row" id="rolledDice" style="min-height: 50px; min-width: 180px">
-        <div>Dice:</div>
-        <div class="row dicerow">
-            @for (var i = 0; i < rollingDice.Count; i++)
-            {
-                var die = rollingDice[i];
-                var dieIndex = i;
-                <div
-                    id="@die.Id"
-                    class="@die.Class"
-                    @onclick="() => PickDie(dieIndex, true)">
-                    @GetDiceFaceUnicode(die.Value)
-                </div>
-            }
-        </div>
-    </div>
-    <div class="row" id="pickedDice" style="min-height: 50px; min-width: 180px">
-        <div>Picks:</div>
-        <div class="row dicerow">
-            @foreach (var die in pickingDice)
-            {
-                <div id="@die.Id" class="@die.Class">@GetDiceFaceUnicode(die.Value)</div>
-            }
-        </div>
-    </div>
-    <div id="meldDice">
-        <div>Melds:</div>
+<div class="parent">
+    <div class="autogrid">
         @{
-            var reversedMelds = meldDice;
-            reversedMelds.Reverse();
+            string displayInGame = currentPlayer == 0 ? "none" : "block";
+            string displayNewGame = currentPlayer == 0 ? "block" : "none";
+            string displayFarkle = showFarkle ? "block" : "none";
         }
-        @foreach (var dieMeld in reversedMelds)
-        {
-            <div class="row meldrow">
-                @foreach (var dieValue in dieMeld)
+        <div>
+            <h1>Farkle Game</h1>
+            <p>
+                <label style="display:@displayNewGame" class="lbl">Number of Players <input class="player-number" @bind-value=@playerCount/></label>
+                <button style="display:@displayNewGame" class="btn btn-primary" @onclick="NewGame" disabled=@newGameDisabled>New Game</button>
+            </p>
+        </div>
+        <div style="display: table; height: 60px; overflow: hidden;">
+            <div style="display: table-cell; vertical-align:bottom; padding-left:14px">
+                @foreach (var playerScore in playerScores)
                 {
-                    <div class="@dieClasses.diemelded">@GetDiceFaceUnicode(dieValue)</div>
+                    <div>Player @playerScore.Key Score : @playerScore.Value</div>
                 }
             </div>
-        }
+        </div>
+        <div>
+            <h1 class="farkle" style="display:@displayFarkle">Farkle!</h1>
+            <div class="reset-style" style="display:@displayInGame">
+                <div class="row" id="rolledDice" style="min-height: 65px;">
+                    <div style="min-width: 60px">Dice:</div>
+                    <div class="row dicerow">
+                        @for (var i = 0; i < rollingDice.Count; i++)
+                        {
+                            var die = rollingDice[i];
+                            var dieIndex = i;
+                            <div
+                                id="@die.Id"
+                                class="@die.Class"
+                                @onclick="() => PickDie(dieIndex, true)">
+                                @GetDiceFaceUnicode(die.Value)
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="row" id="pickedDice" style="min-height: 65px;">
+                    <div style="min-width: 60px">Picks:</div>
+                    <div class="row dicerow">
+                        @for (var i = 0; i < pickingDice.Count; i++)
+                        {
+                            var die = pickingDice[i];
+                            var dieIndex = i;
+                            <div id="@die.Id"
+                                 class="@die.Class"
+                                 @onclick="() => PickDie(dieIndex, false)">
+                                @GetDiceFaceUnicode(die.Value)
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+            <p style="display:@displayInGame">
+                <button class="btn btn-primary" @onclick="TryLuck" disabled=@rollDiceDisabled>Roll Dice</button>
+                <button class="btn btn-primary" @onclick="BankPoints" disabled=@bankPointsDisabled>BankPoints</button>
+            </p>
+        </div>
+        <div style="border-radius:12px; background-color:#e5e5e5; outline:1px solid, #151515">
+            <div class="reset-style" style="display:@displayInGame; padding: 0 0 16px 16px">
+                <h4 style="display:@displayInGame">Current Player: @currentPlayer</h4>
+                <div>Turn Points: @turnPoints</div>
+                <div>Melds:</div>
+                @foreach (var dieMeld in meldDice.AsEnumerable().Reverse())
+                {
+                    <div class="row meldrow">
+                        @foreach (var dieValue in dieMeld)
+                        {
+                            <div class="@dieClasses.diemelded">@GetDiceFaceUnicode(dieValue)</div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+        <div style="grid-column: 1 / span 2;">
+            <div class="reset-style" style="display:@displayInGame">
+                <h4>Fact Log:</h4>
+                <ul>
+                    @foreach (var gameFact in GameFacts)
+                    {
+                        <li>@gameFact.GetType().Name @JsonSerializer.Serialize(gameFact)</li>
+                    }
+                </ul>
+            </div>
+        </div>
     </div>
 </div>
-<p>
-    <button class="btn btn-primary" @onclick="NewGame" disabled=@newGameDisabled>New Game</button>
-    <button class="btn btn-primary" @onclick="TryLuck" disabled=@rollDiceDisabled>Roll Dice</button>
-    <button class="btn btn-primary" @onclick="BankPoints" disabled=@bankPointsDisabled>BankPoints</button>
-</p>
-<ul>
-    @foreach (var gameFact in GameFacts)
-    {
-        <li>@gameFact.GetType().Name @JsonSerializer.Serialize(gameFact)</li>
-    }
-</ul>
 
 @code {
-    private int currentCount = 0;
-    private int? playerNumber = 2;
+    private int playerCount = 2;
+    private int currentPlayer = 0;
     private bool die1Enabled = true;
     private bool newGameDisabled = false;
     private bool rollDiceDisabled = true;
     private bool bankPointsDisabled = true;
-    public List<object> GameFacts { get; } = new List<object>();
+    private List<object> GameFacts { get; } = [];
+    private Dictionary<int, int> playerScores = new();
     private List<Die> rollingDice = [];
     private List<Die> pickingDice = [];
     private List<int[]> meldDice = [];
-
+    private bool showFarkle = false;
+    private int turnPoints = 0;
+    private int pickedDicePoints = 0;
     private enum dieClasses
     {
         die,
@@ -158,11 +210,16 @@
 
     private void NotifyOfNewFact()
     {
+        UpdatePlayerTurn();
         UpdateRollDiceButton();
         UpdateDice();
+        UpdateBankPointsButton();
         UpdatePickedDice();
         UpdateDieClasses();
         UpdateMelds();
+        UpdateTurnPoints();
+        UpdatePlayerScores();
+        UpdateFarkle();
 
         KickoffFactProcessors();
     }
@@ -170,20 +227,33 @@
     private void KickoffFactProcessors()
     {
         RollGenerator();
-        //FarkleInspector();
+        FarkleInspector();
         //WinnerInspector();
     }
 
     #endregion
 
     #region Read Model Subscribers
-    
+
+    private void UpdatePlayerTurn()
+    {
+        object lastFact = GetLastFact();
+
+        //update player turn when game starts or turn ends
+        if (lastFact is GameStartedFact or LuckTriedFact { TurnEnded: true })
+        {
+            var allFacts = GetAllFacts();
+            var playerCount = GetPlayerCount(allFacts);
+            currentPlayer = GetCurrentPlayer(playerCount, allFacts);
+        }
+    }
+
     private void UpdateRollDiceButton()
     {
-        object lastGameFact = GetLastFact();
+        object lastFact = GetLastFact();
 
         //enable roll dice if the last fact was game started, turn ended or hot dice
-        if (lastGameFact.GetType().Name == nameof(GameStartedFact))
+        if (lastFact is GameStartedFact gameStartedFact)
         {
             rollDiceDisabled = false;
         }
@@ -194,7 +264,7 @@
         var lastFact = GetLastFact();
 
         // Setup dice for a new game
-        if (lastFact is GameStartedFact gameStartedFact)
+        if (lastFact is GameStartedFact)
         {
             rollingDice = 
             [
@@ -214,11 +284,11 @@
             rollingDice =
             [
                 new Die(0, dieIds.die1, dieClasses.diehidden)
-                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
-                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
-                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
-                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
-                ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+        ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+        ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+        ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+        ,new Die(0, dieIds.die1, dieClasses.dienoscore)
+        ,new Die(0, dieIds.die1, dieClasses.dienoscore)
             ];
 
             for (var i = 0; i < rollGeneratedFact.DiceValues.Length; i++)
@@ -236,12 +306,17 @@
         // Reset dice for a new turn
         if (lastFact is LuckTriedFact { TurnEnded: true } luckTriedFactTurnEnded)
         {
-            // rollingDice.Clear();
+            rollingDice.Clear();
 
-            // for (var i = 0; i < rollGeneratedFact.DiceValues.Length; i++)
-            // {
-            //     rollingDice.Add((rollGeneratedFact.DiceValues[i], (dieIds)i, dieClasses.die));
-            // }
+            rollingDice =
+            [
+                new Die(1, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(2, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(3, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(4, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(5, dieIds.die1, dieClasses.dienoscore)
+                ,new Die(6, dieIds.die1, dieClasses.dienoscore)
+            ];
         }
     }
 
@@ -255,11 +330,11 @@
             pickingDice =
             [
                 new Die(0, dieIds.die1, dieClasses.diehidden)
-                , new Die(0, dieIds.die2, dieClasses.diehidden)
-                , new Die(0, dieIds.die3, dieClasses.diehidden)
-                , new Die(0, dieIds.die4, dieClasses.diehidden)
-                , new Die(0, dieIds.die5, dieClasses.diehidden)
-                , new Die(0, dieIds.die6, dieClasses.diehidden)
+        , new Die(0, dieIds.die2, dieClasses.diehidden)
+        , new Die(0, dieIds.die3, dieClasses.diehidden)
+        , new Die(0, dieIds.die4, dieClasses.diehidden)
+        , new Die(0, dieIds.die5, dieClasses.diehidden)
+        , new Die(0, dieIds.die6, dieClasses.diehidden)
             ];
         }
 
@@ -282,17 +357,60 @@
 
     private void UpdateBankPointsButton()
     {
-        throw new NotImplementedException();
+        var lastFact = GetLastFact();
+
+        // Disable bank points button until new dice are picked
+        if (lastFact is LuckTriedFact { TurnEnded: true })
+        {
+            bankPointsDisabled = true;
+        }
+
+        // Enable bank points button if a roll generated event score is greater than 0
+        if (lastFact is RollGeneratedFact rollGeneratedFact)
+        {
+            var scoreResult = CalculateScore(rollGeneratedFact.DiceValues.ToList());
+            if (scoreResult.Score > 0)
+            {
+                bankPointsDisabled = false;
+            }
+        }
+
+        // Enable bank points button if a die picked event results in a meld with nothing leftover, otherwise disable
+        if (lastFact is DiePickedFact)
+        {
+            var rolledDice =
+                rollingDice
+                    .Where(die => die.Class is dieClasses.diescorable)
+                    .Select(die => die.Value)
+                    .ToList();
+            
+            var pickedDice = 
+                pickingDice
+                    .Where(die => die.Class is dieClasses.diepicked or dieClasses.diescorable)
+                    .Select(die => die.Value)
+                    .ToList();
+
+            var rolledDiceScore = CalculateScore(rolledDice);
+            var pickedDiceScore = CalculateScore(pickedDice);
+            if (pickedDiceScore is { Score: > 0 } || rolledDiceScore is { Score: > 0 })
+            {
+                bankPointsDisabled = false;
+            }
+            else
+            {
+                bankPointsDisabled = true;
+            }
+        }
     }
 
-    public void UpdateMelds()
+    private void UpdateMelds()
     {
         var lastFact = GetLastFact();
 
         // Setup meld area for new game
         if (lastFact is GameStartedFact)
         {
-            
+
         }
 
         // Load melds on a new roll
@@ -330,6 +448,96 @@
         }
     }
 
+    private void UpdateTurnPoints()
+    {
+        var lastFact = GetLastFact();
+
+        // Clear turn points at game start or when turn ends
+        if (lastFact is GameStartedFact
+            || lastFact is LuckTriedFact { TurnEnded: true })
+        {
+            turnPoints = 0;
+        }
+
+        // Update turn points when die is picked
+        if (lastFact is DiePickedFact)
+        {
+            var luckTriedSoFar = GetLuckTriedFactsSinceLastTurn(GetAllFacts());
+
+            int luckTriedSoFarScore = 0, pickedDiceScore = 0;
+
+            foreach (var luckTriedFact in luckTriedSoFar)
+            {
+                var scoreResult = CalculateScore(luckTriedFact.MeldKept.ToList());
+                luckTriedSoFarScore += scoreResult.Score;
+            }
+
+            var scorablePickedDice =
+                pickingDice.Where(die => die.Class == dieClasses.diescorable)
+                    .Select(die => die.Value)
+                    .ToList();
+
+            if (scorablePickedDice.Count > 0)
+            {
+                pickedDiceScore = CalculateScore(scorablePickedDice).Score;
+            }
+
+            turnPoints = (luckTriedSoFarScore + pickedDiceScore);
+        }
+
+        // Add hot dice to turn points
+        // if (IsHotDice())
+        // {
+        //     var hotDiceScore = CalculateScore(lastFact.DiceValues).Score;
+
+        //     GetElementById("turnPoints").TextContent =
+        //         ((int.Parse(GetElementById("turnPoints").TextContent) || 0) + hotDiceScore).ToString();
+        // }
+
+        // Update turn points when luck is tried
+        if (lastFact is LuckTriedFact { TurnEnded: false })
+        {
+            var luckTriedSoFar = GetLuckTriedFactsSinceLastTurn(GetAllFacts());
+            int luckTriedSoFarScore = 0;
+            foreach (var luckTriedFact in luckTriedSoFar)
+            {
+                var scoreResult = CalculateScore(luckTriedFact.MeldKept.ToList());
+                luckTriedSoFarScore += scoreResult.Score;
+            }
+
+            turnPoints = luckTriedSoFarScore;
+        }
+    }
+
+    private void UpdatePlayerScores()
+    {
+        var lastFact = GetLastFact();
+
+        // Reset scores on game start
+        if (lastFact is GameStartedFact gameStartedFact)
+        {
+            for (int i = 1; i <= gameStartedFact.NumberOfPlayers; i++)
+            {
+                playerScores.Add(i,0);
+            }
+        }
+
+        // Update scores on turn end
+        if (lastFact is LuckTriedFact { TurnEnded: true, MeldKept.Length: > 0})
+        {
+            var gameFacts = GetAllFacts();
+            var playerCount = GetPlayerCount(gameFacts);
+            var playerScores1 = GetPlayerScores(playerCount, gameFacts);
+            var currentPlayer = GetCurrentPlayer(playerCount, gameFacts);
+            var totalScores = 0;
+
+            for (int i = 0; i < playerScores1.Count; i++)
+            {
+                playerScores[i+1] = playerScores1[i];
+            }
+        }
+    }
+
     private void UpdateDieClasses()
     {
         var lastFact = GetLastFact();
@@ -339,28 +547,32 @@
         {
             var rollingDiceValues = rollingDice
                 .Select(d => d.Value)
+                .Where(d => d > 0)
                 .ToList();
 
-            Dice rollingDiceScore = CalculateScore(rollingDiceValues);
+            var pickingDiceValues = pickingDice
+                .Select(d => d.Value)
+                .Where(d => d > 0)
+                .ToList();
+
+            List<int> combinedDiceValues = [];
+            combinedDiceValues.AddRange(rollingDiceValues);
+            combinedDiceValues.AddRange(pickingDiceValues);
+
+            Dice combinedDice = CalculateScore(combinedDiceValues);
 
             foreach (Die die in rollingDice)
             {
                 die.Class = 
-                    rollingDiceScore.ScorableDice.Contains(die.Value) ? dieClasses.diescorable : dieClasses.dienoscore;
-            
+                    combinedDice.ScorableDice.Contains(die.Value) ? dieClasses.diescorable : dieClasses.dienoscore;
+
                 if (die.Value == 0)
                     die.Class = dieClasses.diehidden;
             }
 
-            var pickingDiceValues = pickingDice
-                .Select(d => d.Value)
-                .ToList();
-
-            Dice pickingDiceScore = CalculateScore(pickingDiceValues);
-
             foreach (Die die in pickingDice)
             {
-                die.Class = pickingDiceScore.ScorableDice.Contains(die.Value) ? dieClasses.diescorable : dieClasses.diepicked;
+                die.Class = combinedDice.ScorableDice.Contains(die.Value) ? dieClasses.diescorable : dieClasses.diepicked;
 
                 if (die.Value == 0)
                     die.Class = dieClasses.diehidden;
@@ -368,8 +580,25 @@
         }
     }
 
+    private void UpdateFarkle()
+    {
+        var lastFact = GetLastFact();
+
+        if (lastFact is LuckTriedFact { TurnEnded: true, MeldKept.Length: 0 })
+        {
+            rollDiceDisabled = true;
+            showFarkle = true;
+            var timer = new Timer(new TimerCallback(_ =>
+            {
+                rollDiceDisabled = false;
+                showFarkle = false;
+                InvokeAsync(StateHasChanged);
+            }), null, 1000, 1000);
+        }
+    }
+
     #endregion
-    
+
     #region Read Model Methods
 
     private object GetLastFact()
@@ -381,7 +610,120 @@
     {
         return GameFacts;
     }
-    
+
+    private int GetLastGameStartedIndex(List<object> facts)
+    {
+        return facts
+        .Select(fact => fact.GetType())
+        .ToList()
+        .LastIndexOf(typeof(GameStartedFact));
+    }
+
+    private int GetPlayerCount(List<object> facts)
+    {
+        int lastGameStartedIndex = GetLastGameStartedIndex(facts);
+        if (lastGameStartedIndex != -1)
+        {
+            GameStartedFact fact = facts[lastGameStartedIndex] as GameStartedFact ?? throw new InvalidOperationException();
+            if (fact.NumberOfPlayers.HasValue) return fact.NumberOfPlayers.Value;
+        }
+        return 0; // or appropriate default/fallback value, such as 0 or undefined, depending on further usage
+    }
+
+    private int GetCurrentPlayer(int playerCount, List<object> facts) {
+        var lastGameStartedIndex = GetLastGameStartedIndex(facts);
+        var turnEndedCount = 
+            facts
+                .Skip(lastGameStartedIndex + 1)
+                .Count(fact => fact is LuckTriedFact { TurnEnded: true });
+        return (turnEndedCount % playerCount) + 1;
+    }
+
+    private List<int> GetPlayerScores(int playerCount, List<object> facts)
+    {
+        var playersLuckTriedFacts = GetPlayersLuckTriedFacts(playerCount, facts);
+
+        var playersTurns = playersLuckTriedFacts
+            .Select(playerFacts =>
+        {
+            var turns = new List<List<object>>();
+            var currentTurn = new List<object>();
+
+            foreach (LuckTriedFact fact in playerFacts)
+            {
+                currentTurn.Add(fact);
+                // End of a turn
+                if (fact.TurnEnded)
+                {
+                    turns.Add([..currentTurn]);
+                    currentTurn.Clear();
+                }
+            }
+
+            return turns;
+        }).ToList();
+
+        var scorablePlayerTurns =
+            playersTurns
+                .Select(
+                    playerTurns =>
+                        playerTurns
+                            .Where(turn =>
+                            {
+                                LuckTriedFact? lastFact = turn.Last() as LuckTriedFact;
+                                return lastFact != null && !(lastFact is { TurnEnded: true, MeldKept.Length: 0 });
+                            })
+                            .ToList()
+                ).ToList();
+
+        var playersTurnScores =
+            scorablePlayerTurns
+                .Select(playerTurns =>
+                    playerTurns
+                        .Select(turn =>
+                            turn.Aggregate(0, (turnScore, fact) =>
+                            {
+                                if (((LuckTriedFact)fact).MeldKept.Length > 0)
+                                {
+                                    var scoreResult = CalculateScore(((LuckTriedFact)fact).MeldKept.ToList());
+                                    return turnScore + scoreResult.Score;
+                                }
+
+                                return turnScore;
+                            })
+                        ).ToList()
+                ).ToList();
+
+        var totalPlayerScores =
+            playersTurnScores
+                .Select(playerScores =>
+                    playerScores.Aggregate(0, (totalScore, turnScore) => totalScore + turnScore)
+                ).ToList();
+
+        return totalPlayerScores;
+    }
+
+    private List<List<object>> GetPlayersLuckTriedFacts(int playerCount, List<object> facts)
+    {
+        var playersLuckTriedFacts = new List<List<object>>(new List<object>[playerCount]);
+        for (int i = 0; i < playerCount; i++)
+        {
+            playersLuckTriedFacts[i] = new List<object>();
+        }
+
+        foreach (var fact in facts)
+        {
+            if (fact is LuckTriedFact)
+            {
+                var currentPlayer = GetCurrentPlayer(playerCount, facts.Take(facts.IndexOf(fact)).ToList());
+
+                playersLuckTriedFacts[currentPlayer - 1].Add(fact);
+            }
+        }
+
+        return playersLuckTriedFacts;
+}
+
     private List<LuckTriedFact> GetLuckTriedFactsSinceLastTurn(List<object> facts)
     {
         int turnStartIndex = Math.Max(
@@ -394,7 +736,7 @@
                 .GetRange(turnStartIndex, facts.Count - turnStartIndex)
                 .OfType<LuckTriedFact>()
                 .ToList();
-        
+
         return luckTriedFactsThisTurn;
     }
 
@@ -422,17 +764,26 @@
         if (GetLastFact() is LuckTriedFact { TurnEnded: false } luckTriedFact)
         {
             var numberToGenerate = luckTriedFact.DiceRolled.Length == 0 ? 6 : luckTriedFact.DiceRolled.Length;
-            
+
             var numbersGenerated = 
                 GenerateRoll(numberToGenerate);
-            
+
             StoreFact(new RollGeneratedFact(numbersGenerated));
         }
     }
 
     private void FarkleInspector()
     {
-        throw new NotImplementedException();
+        var lastFact = GetLastFact();
+        
+        if (lastFact is RollGeneratedFact rollGeneratedFact)
+        {
+            var scoredDice = CalculateScore(rollGeneratedFact.DiceValues.ToList());
+            if (scoredDice.Score == 0)
+            {
+                StoreFact(new LuckTriedFact(rollGeneratedFact.DiceValues, [], true));
+            }
+        }
     }
 
     private void WinnerInspector()
@@ -447,7 +798,7 @@
     private void NewGame()
     {
         GameFacts.Clear();
-        StoreFact(new GameStartedFact(playerNumber));
+        StoreFact(new GameStartedFact(playerCount));
     }
 
     private void TryLuck()
@@ -474,7 +825,7 @@
 
         var diceToRoll = rolledDice.Concat(pickedDice);
         var keptDice = pickedScoringDice.Concat(hotDice).ToArray();
-        
+
         StoreFact(
             new LuckTriedFact(
                 rolledDice
@@ -484,12 +835,39 @@
 
     private void PickDie(int index, bool fromRoll)
     {
+        if(fromRoll)
+            if (rollingDice[index].Class is dieClasses.dienoscore or dieClasses.diehot)
+            {
+                return;
+            }
+
         StoreFact(new DiePickedFact(index, fromRoll));
     }
     
     private void BankPoints()
     {
-        throw new NotImplementedException();
+        var scorableRolledDice = rollingDice
+            .Where(die => die.Class is dieClasses.diescorable or dieClasses.diehot)
+            .Select(die => die.Value)
+            .ToList();
+
+        var scorablePickedDice = pickingDice
+            .Where(die => die.Class is dieClasses.diescorable)
+            .Select(die => die.Value)
+            .ToList();
+
+        List<int> valuesToBeScored = [];
+        valuesToBeScored.AddRange(scorableRolledDice);
+        valuesToBeScored.AddRange(scorablePickedDice);
+        valuesToBeScored.Sort();
+
+        Dice calculatedDice = CalculateScore(valuesToBeScored);
+
+        StoreFact(
+            new LuckTriedFact(
+                calculatedDice.UnscorableDice.ToArray()
+                , calculatedDice.ScorableDice.ToArray()
+                , true));
     }
 
     #endregion
